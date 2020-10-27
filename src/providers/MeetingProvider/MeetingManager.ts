@@ -60,6 +60,8 @@ export class MeetingManager implements AudioVideoObserver {
 
   selectedAudioInputDevice: string | null = null;
 
+  selectedAudioInputDeviceLabel: null | string = null;
+
   selectedAudioInputDeviceObservers: ((deviceId: string | null) => void)[] = [];
 
   selectedVideoInputDevice: string | null = null;
@@ -93,6 +95,8 @@ export class MeetingManager implements AudioVideoObserver {
   postLoggerConfig: PostLogConfig | null = null;
 
   constructor(config: ManagerConfig) {
+    (window as any).manager = this;
+
     this.logLevel = config.logLevel;
 
     if (config.postLogConfig) {
@@ -288,6 +292,7 @@ export class MeetingManager implements AudioVideoObserver {
       this.audioInputDevices.length
     ) {
       this.selectedAudioInputDevice = this.audioInputDevices[0].deviceId;
+      this.selectedAudioInputDeviceLabel = this.audioInputDevices[0].label;
       await this.audioVideo?.chooseAudioInputDevice(
         this.audioInputDevices[0].deviceId
       );
@@ -318,14 +323,25 @@ export class MeetingManager implements AudioVideoObserver {
   }
 
   selectAudioInputDevice = async (deviceId: string): Promise<void> => {
+    if (!this.audioVideo) {
+      return;
+    }
+
     try {
       const receivedDevice = audioInputSelectionToDevice(deviceId);
       if (receivedDevice === null) {
-        await this.audioVideo?.chooseAudioInputDevice(null);
+        await this.audioVideo.chooseAudioInputDevice(null);
         this.selectedAudioInputDevice = null;
+        this.selectedAudioInputDeviceLabel = null;
       } else {
-        await this.audioVideo?.chooseAudioInputDevice(receivedDevice);
-        this.selectedAudioInputDevice = deviceId;
+        const devices = await this.audioVideo.listAudioInputDevices();
+        const input = devices.find(device => device.deviceId === deviceId);
+
+        if (input) {
+          await this.audioVideo.chooseAudioInputDevice(receivedDevice);
+          this.selectedAudioInputDevice = deviceId;
+          this.selectedAudioInputDeviceLabel = input.label;
+        }
       }
       this.publishSelectedAudioInputDevice();
     } catch (error) {

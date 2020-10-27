@@ -6,7 +6,8 @@ import React, {
   useEffect,
   useState,
   useContext,
-  useMemo
+  useMemo,
+  useRef
 } from 'react';
 import { DeviceChangeObserver } from 'amazon-chime-sdk-js';
 
@@ -25,6 +26,7 @@ const AudioInputProvider: React.FC = ({ children }) => {
   const [selectedAudioInputDevice, setSelectedAudioInputDevice] = useState(
     meetingManager.selectedAudioInputDevice
   );
+  const initialized = useRef(false);
 
   useEffect(() => {
     const callback = (updatedAudioInputDevice: string | null): void => {
@@ -42,7 +44,6 @@ const AudioInputProvider: React.FC = ({ children }) => {
 
     const observer: DeviceChangeObserver = {
       audioInputsChanged: (newAudioInputs: MediaDeviceInfo[]) => {
-        console.log('AudioInputProvider - audio inputs updated');
         setAudioInputs(newAudioInputs);
       }
     };
@@ -57,6 +58,7 @@ const AudioInputProvider: React.FC = ({ children }) => {
       if (isMounted) {
         setAudioInputs(devices);
         audioVideo.addDeviceChangeObserver(observer);
+        initialized.current = true;
       }
     }
 
@@ -67,6 +69,41 @@ const AudioInputProvider: React.FC = ({ children }) => {
       audioVideo?.removeDeviceChangeObserver(observer);
     };
   }, [audioVideo]);
+
+  useEffect(() => {
+    if (!audioVideo) {
+      return;
+    }
+
+    const observer: DeviceChangeObserver = {
+      audioInputsChanged: async (newAudioInputs: MediaDeviceInfo[]) => {
+
+        if (!initialized.current) {
+          return;
+        }
+
+        const existingDevice = newAudioInputs.find(device => device.deviceId === selectedAudioInputDevice);
+        if (existingDevice) {
+            const outdatedDevice = existingDevice.label !== meetingManager.selectedAudioInputDeviceLabel
+              || existingDevice.deviceId !== meetingManager.selectedAudioInputDevice;
+
+              if (outdatedDevice) {
+                console.log("Stale audio input device found. Dropping and selecting audio input")
+
+                await audioVideo.chooseAudioInputDevice(null);
+                await meetingManager.selectAudioInputDevice(existingDevice.deviceId);
+              }
+
+        } else {
+          await meetingManager.selectAudioInputDevice('none');
+        }
+      }
+    };
+
+    audioVideo.addDeviceChangeObserver(observer)
+
+    return () => audioVideo.removeDeviceChangeObserver(observer);
+  }, [audioVideo, selectedAudioInputDevice])
 
   const contextValue: DeviceTypeContext = useMemo(
     () => ({
